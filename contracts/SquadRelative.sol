@@ -2,10 +2,42 @@
 pragma solidity ^0.8.0;
 pragma abicoder v2;
 
+import "@openzeppelin/contracts/token/ERC721/presets/ERC721PresetMinterPauserAutoId.sol";
 import "./PancakeSquad.sol";
 
-contract SquadRelativeMaster is ERC721PresetMinterPauserAutoId {
+contract SquadRelativeMaster is AccessControlEnumerable {
+    SquadRelative private squadRelative;
+    mapping(uint256 => uint256) private pancakeSquadIdToRelativeSquadId;
 
+    constructor(
+        string memory name,
+        string memory symbol,
+        uint256 maxSupply,
+        address pancakeSquadAddress
+    ) {
+        _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
+        squadRelative = new SquadRelative(
+            name,
+            symbol,
+            maxSupply,
+            pancakeSquadAddress
+        );
+        pancakeSquadIdToRelativeSquadId[8483] = 8;
+    }
+
+    function getSquadRelativeAddress() public view returns (address) {
+        return address(squadRelative);
+    }
+
+    function mintOnBehalfOfCaller(uint256 tokenId) public {
+        require(
+            squadRelative.getPancakeSquad().ownerOf(tokenId) == _msgSender(),
+            "Not the owner"
+        );
+        require(pancakeSquadIdToRelativeSquadId[tokenId] != 0, "No GIF made");
+        uint256 squadRelativeId = pancakeSquadIdToRelativeSquadId[tokenId];
+        squadRelative.mint(_msgSender(), squadRelativeId);
+    }
 }
 
 contract SquadRelative is ERC721Enumerable, Ownable {
@@ -18,8 +50,6 @@ contract SquadRelative is ERC721Enumerable, Ownable {
     string public baseURI;
 
     event Lock();
-    event NonFungibleTokenRecovery(address indexed token, uint256 tokenId);
-    event TokenRecovery(address indexed token, uint256 amount);
 
     PancakeSquad private pancakeSquad;
 
@@ -27,14 +57,18 @@ contract SquadRelative is ERC721Enumerable, Ownable {
         string memory _name,
         string memory _symbol,
         uint256 _maxSupply,
-        PancakeSquad _pancakeSquad
+        address _pancakeSquadAddress
     ) ERC721(_name, _symbol) {
         require(
-            (_maxSupply == 100) || (_maxSupply == 1000),
+            (_maxSupply == 130) || (_maxSupply == 13),
             "Operations: Wrong max supply"
         );
         maxSupply = _maxSupply;
-        pancakeSquad = _pancakeSquad;
+        pancakeSquad = PancakeSquad(_pancakeSquadAddress);
+    }
+
+    function getPancakeSquad() external view returns (PancakeSquad) {
+        return pancakeSquad;
     }
 
     /**
@@ -56,32 +90,6 @@ contract SquadRelative is ERC721Enumerable, Ownable {
     function mint(address _to, uint256 _tokenId) external onlyOwner {
         require(totalSupply() < maxSupply, "NFT: Total supply reached");
         _mint(_to, _tokenId);
-    }
-
-    /**
-     * @notice Allows the owner to recover non-fungible tokens sent to the contract by mistake
-     * @param _token: NFT token address
-     * @param _tokenId: tokenId
-     * @dev Callable by owner
-     */
-    function recoverNonFungibleToken(address _token, uint256 _tokenId) external onlyOwner {
-        IERC721(_token).transferFrom(address(this), address(msg.sender), _tokenId);
-
-        emit NonFungibleTokenRecovery(_token, _tokenId);
-    }
-
-    /**
-     * @notice Allows the owner to recover tokens sent to the contract by mistake
-     * @param _token: token address
-     * @dev Callable by owner
-     */
-    function recoverToken(address _token) external onlyOwner {
-        uint256 balance = IERC20(_token).balanceOf(address(this));
-        require(balance != 0, "Operations: Cannot recover zero balance");
-
-        IERC20(_token).safeTransfer(address(msg.sender), balance);
-
-        emit TokenRecovery(_token, balance);
     }
 
     /**
@@ -122,8 +130,19 @@ contract SquadRelative is ERC721Enumerable, Ownable {
      * @notice Returns the Uniform Resource Identifier (URI) for a token ID
      * @param tokenId: token ID
      */
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
-        return bytes(baseURI).length > 0 ? string(abi.encodePacked(baseURI, tokenId.toString(), ".json")) : "";
+    function tokenURI(uint256 tokenId)
+        public
+        view
+        override
+        returns (string memory)
+    {
+        require(
+            _exists(tokenId),
+            "ERC721Metadata: URI query for nonexistent token"
+        );
+        return
+            bytes(baseURI).length > 0
+                ? string(abi.encodePacked(baseURI, tokenId.toString(), ".json"))
+                : "";
     }
 }
